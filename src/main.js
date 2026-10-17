@@ -1,3 +1,4 @@
+import "./lib/polyfills.js";
 import "./styles.css";
 import { h, $ } from "./lib/util.js";
 import { icon, toast } from "./lib/ui.js";

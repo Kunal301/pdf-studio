@@ -1027,6 +1027,63 @@ await test("font size: changing it with a word selected resizes only that word; 
   assert.deepEqual(m.fmt, [], "per-word size overrides cleared");
 });
 
+
+// ---------------------------------------------------------------- older browsers
+// Emulates browsers that lack newer JS APIs (the cause of "getOrInsertComputed is not a function" on Safari/Chrome):
+// they are removed from the page AND from the PDF worker before the app loads. Polyfills must make everything work.
+const OLD_BROWSER = `
+  for (const C of [Map, WeakMap]) { delete C.prototype.getOrInsert; delete C.prototype.getOrInsertComputed; }
+  delete Promise.try; delete Promise.withResolvers; delete Math.sumPrecise;
+  delete Array.prototype.findLast; delete Array.prototype.findLastIndex; delete Array.prototype.toSorted; delete Array.prototype.toReversed;
+  delete Object.groupBy; delete Map.groupBy;
+  if (typeof ReadableStream !== "undefined") { delete ReadableStream.prototype[Symbol.asyncIterator]; delete ReadableStream.prototype.values; }
+`;
+await test("older browser (new JS APIs missing): editing, merge, convert, protect, OCR still work", async () => {
+  const ctx = await browser.newContext({ acceptDownloads: true, viewport: { width: 1400, height: 900 } });
+  // static imports keep the worker's message handler registered before any message arrives (like the real worker)
+  await ctx.addInitScript(`${OLD_BROWSER}
+    const rm = URL.createObjectURL(new Blob([${JSON.stringify(OLD_BROWSER)}], { type: "text/javascript" }));
+    const W = window.Worker;
+    window.Worker = class extends W { constructor(url, o) { const abs = new URL(url, location.href).href;
+      if (!/pdfWorker/.test(abs)) return super(url, o);
+      super(URL.createObjectURL(new Blob(['import ' + JSON.stringify(rm) + '; import ' + JSON.stringify(abs) + ';'], { type: "text/javascript" })), o); } };`);
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  try {
+    await page.goto(`${BASE}/#/edit`);
+    await setFile(page, { name: "invoice.pdf", mimeType: "application/pdf", buffer: await makeInvoice() });
+    await page.waitForFunction(() => document.querySelector(".page-wrap canvas")?.width > 100);
+    await page.locator(".block-hit").first().waitFor();
+    await startEdit(page, "Order placed");
+    await page.keyboard.type(" X");
+    assert.equal(await page.locator(".toast.error").count(), 0, "no error toasts");
+    // merge
+    await page.goto(`${BASE}/#/merge`);
+    await setFile(page, { name: "a.pdf", mimeType: "application/pdf", buffer: await makePdf(1) });
+    await page.locator(".file-row").first().waitFor();
+    await setFile(page, { name: "b.pdf", mimeType: "application/pdf", buffer: await makePdf(2) });
+    await page.waitForFunction(() => document.querySelectorAll(".file-row").length === 2);
+    const m = await downloadOf(page, () => page.getByRole("button", { name: "Merge PDFs" }).click());
+    assert.equal((await PDFDocument.load(m.bytes)).getPageCount(), 3);
+    // convert PDF -> Word
+    await page.goto(`${BASE}/#/convert`); await page.reload();
+    await setFile(page, { name: "r.pdf", mimeType: "application/pdf", buffer: await makePdf(1) });
+    await page.getByText(/r\.pdf · \d+ page/).waitFor();
+    const d = await downloadOf(page, () => page.getByRole("button", { name: "Convert", exact: true }).click());
+    assert.ok(d.name.endsWith(".docx"));
+    // protect
+    await page.goto(`${BASE}/#/protect`);
+    await setFile(page, { name: "p.pdf", mimeType: "application/pdf", buffer: await makePdf(1) });
+    await page.getByLabel("Password", { exact: true }).first().fill("pw1"); await page.getByLabel("Confirm password").fill("pw1");
+    const pr = await downloadOf(page, () => page.getByRole("button", { name: "Protect & download" }).click());
+    assert.ok(pr.name.endsWith("-protected.pdf"));
+    assert.deepEqual(errs, [], "no uncaught errors: " + errs.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+});
+
 await browser.close();
 server.proc.kill();
 console.log(`\n${passed} passed, ${failed} failed`);

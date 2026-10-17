@@ -1,11 +1,12 @@
+import "./polyfills.js";
 // The legacy build bundles the polyfills older Safari/iOS needs (e.g. async iteration of ReadableStream).
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
-import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { readBytes } from "./util.js";
 import { promptText } from "./ui.js";
 import { decryptPdf } from "./qpdf.js";
 
-pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+// Our own module worker so polyfills run inside the worker thread too.
+pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL("./pdfWorker.js", import.meta.url), { type: "module" });
 
 export function openDoc(bytes, password) {
   return pdfjs.getDocument({ data: bytes.slice(), password, isEvalSupported: false, fontExtraProperties: true }).promise;
