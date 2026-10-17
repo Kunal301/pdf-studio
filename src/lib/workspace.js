@@ -133,8 +133,8 @@ function textPanel(editor, o, listen) {
   const font = h("select", { "aria-label": "Font", onchange: (e) => editor.updateObject(o.id, { font: e.target.value }, { refocus: true }) },
     Object.entries(FAMILIES).map(([id, f]) => h("option", { value: id, selected: normalizeFamily(o.font) === id }, f.label)));
   const size = h("input.num-input", { type: "number", min: 4, max: 200, step: 0.5, value: o.size, "aria-label": "Font size", style: { width: "74px" },
-    oninput: (e) => { const v = +e.target.value; if (v >= 4 && v <= 200) editor.updateObject(o.id, { size: v }, { commit: false }); },
-    onchange: (e) => { editor.updateObject(o.id, { size: Math.min(200, Math.max(4, +e.target.value || o.size)) }, { refocus: true }); } });
+    oninput: (e) => { const v = +e.target.value; if (v >= 4 && v <= 200) editor.setFontSize(v, { commit: false, refocus: false }); },
+    onchange: (e) => { editor.setFontSize(Math.min(200, Math.max(4, +e.target.value || o.size)), { refocus: true }); } });
   const color = h("input", { type: "color", value: o.color, "aria-label": "Text color", oninput: (e) => editor.setColor(e.target.value, { refocus: false, commit: false }), onchange: () => { editor.pushHistory(); editor.refocusEditing(); } });
 
   const bBtn = btn(null, "Bold (Ctrl/⌘+B)", () => editor.toggleFormat("b"), h("b", {}, "B"));
@@ -182,7 +182,7 @@ function textPanel(editor, o, listen) {
     press(lnk, st.link); unl.disabled = !st.link;
     if (document.activeElement !== color && /^#[0-9a-f]{6}$/i.test(st.c)) color.value = st.c;
     const cur = st.o;
-    if (document.activeElement !== size) size.value = cur.size;
+    if (document.activeElement !== size) size.value = Math.round(st.size * 10) / 10;
   };
   listen("format", refresh);
   listen("link-request", () => openLinkDialog(editor));

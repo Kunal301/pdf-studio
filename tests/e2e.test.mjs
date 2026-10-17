@@ -994,6 +994,39 @@ await test("edit box text weight matches the original page (no lighter/thinner t
   assert.notEqual(smoothing, "antialiased");
 });
 
+
+await test("font size: changing it with a word selected resizes only that word; no selection / select-all resizes the whole box", async (page) => {
+  await openInvoice(page);
+  await startEdit(page, "Order placed");
+  await selectFirstWord(page, 5); // "Order"
+  const size = page.getByLabel("Font size");
+  await size.fill("24");
+  let m = await model(page);
+  assert.equal(m.size, 14, "box base size unchanged");
+  assert.deepEqual(m.fmt, [{ s: 0, e: 5, z: 24 }]);
+  assert.equal(await page.locator('.obj.text .content span[data-z="24"]').first().textContent(), "Order");
+  await page.mouse.click(5, 500);
+  const dl = await downloadOf(page, () => page.getByRole("button", { name: "Download PDF" }).click());
+  // font sizes used in the page content: the 24pt word and the 14pt rest share one line
+  const { PDFDocument: PD2, PDFArray, decodePDFRawStream } = await import("pdf-lib");
+  const pd = await PD2.load(dl.bytes);
+  const pg = pd.getPage(0);
+  const refs = pg.node.Contents() instanceof PDFArray ? pg.node.Contents().asArray() : [pg.node.get((await import("pdf-lib")).PDFName.of("Contents"))];
+  const content = refs.map((r) => Buffer.from(decodePDFRawStream(pd.context.lookup(r)).decode()).toString("latin1")).join("\n");
+  const sizes = new Set([...content.matchAll(/\/\S+\s+([\d.]+)\s+Tf/g)].map((m) => Math.round(+m[1])));
+  assert.ok(sizes.has(24) && sizes.has(14), `font sizes in content: ${[...sizes]}`);
+  const line = (await textItems(dl.bytes)).filter((i) => i.y > 700 && i.x < 300);
+  assert.equal(line.length, 1, "one text line (words share a baseline)");
+  // select everything → whole box
+  await page.locator(".obj.text .content").click();
+  await page.locator('.obj.text .content[contenteditable="true"]').waitFor();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.getByLabel("Font size").fill("18");
+  m = await model(page);
+  assert.equal(m.size, 18);
+  assert.deepEqual(m.fmt, [], "per-word size overrides cleared");
+});
+
 await browser.close();
 server.proc.kill();
 console.log(`\n${passed} passed, ${failed} failed`);

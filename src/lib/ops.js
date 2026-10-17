@@ -215,7 +215,7 @@ async function drawRichText(doc, page, o, { toX, toY }, fonts, embedded, fontDat
   let para = 0;
   for (const ch of Array.from(text)) {
     const st = cs[off] || {};
-    items.push({ ch, para, b: st.b ?? base.b, i: st.i ?? base.i, u: st.u ?? false, c: st.c ?? base.c, l: st.l ?? null });
+    items.push({ ch, para, b: st.b ?? base.b, i: st.i ?? base.i, u: st.u ?? false, c: st.c ?? base.c, l: st.l ?? null, sz: st.z ?? size });
     off += ch.length;
     if (ch === "\n") para++;
   }
@@ -280,8 +280,8 @@ async function drawRichText(doc, page, o, { toX, toY }, fonts, embedded, fontDat
     for (let a = 0; a < arr.length;) {
       const f = fontOf(arr[a]);
       let z = a + 1;
-      while (z < arr.length && fontOf(arr[z]) === f) z++;
-      w += f.widthOfTextAtSize(arr.slice(a, z).map((x) => x.ch2).join(""), size) + track * (z - a);
+      while (z < arr.length && fontOf(arr[z]) === f && arr[z].sz === arr[a].sz) z++;
+      w += f.widthOfTextAtSize(arr.slice(a, z).map((x) => x.ch2).join(""), arr[a].sz) + track * (z - a);
       a = z;
     }
     return w;
@@ -292,13 +292,14 @@ async function drawRichText(doc, page, o, { toX, toY }, fonts, embedded, fontDat
   const upm = primary.unitsPerEm || 1000;
   const asc = o.asc ?? primary.ascent / upm;
   const desc = o.desc ?? -primary.descent / upm;
-  const off0 = baselineOffset(size, L, asc, desc);
+  const lf = L / size; // line height as a multiple of the largest text on the line
   const wrapOn = o.wrap !== false;
   const paraSpace = o.paraSpace || 0;
 
   const drawPieces = (pieces, x, y, extra) => {
     const links = [];
     for (const pc of pieces) {
+      const size = pc.sz;
       const w = pc.f.widthOfTextAtSize(pc.text, size) + track * pc.n;
       if (pc.text.trim()) {
         if (track) page.pushOperators(setCharacterSpacing(track));
@@ -316,7 +317,8 @@ async function drawRichText(doc, page, o, { toX, toY }, fonts, embedded, fontDat
       }
       x += wFull;
     }
-    for (const lk of links) addLinkAnnotation(doc, page, { x0: toX(lk.x0), x1: toX(lk.x1), y0: y - size * 0.24, y1: y + size * 0.82 }, lk.url);
+    const ls = Math.max(...pieces.map((pc) => pc.sz), 1);
+    for (const lk of links) addLinkAnnotation(doc, page, { x0: toX(lk.x0), x1: toX(lk.x1), y0: y - ls * 0.24, y1: y + ls * 0.82 }, lk.url);
   };
   const toPieces = (line, splitSpaces) => {
     const pieces = [];
@@ -324,13 +326,13 @@ async function drawRichText(doc, page, o, { toX, toY }, fonts, embedded, fontDat
       const f = fontOf(it);
       const sp = it.ch === " ";
       const last = pieces[pieces.length - 1];
-      if (last && last.f === f && last.c === it.c && last.u === it.u && last.l === (it.l ?? null) && (!splitSpaces || (!sp && !last.sp))) { last.text += it.ch2; last.n++; }
-      else pieces.push({ f, c: it.c, u: it.u, l: it.l ?? null, text: it.ch2, sp, n: 1 });
+      if (last && last.f === f && last.c === it.c && last.u === it.u && last.l === (it.l ?? null) && last.sz === it.sz && (!splitSpaces || (!sp && !last.sp))) { last.text += it.ch2; last.n++; }
+      else pieces.push({ f, c: it.c, u: it.u, l: it.l ?? null, sz: it.sz, text: it.ch2, sp, n: 1 });
     }
     return pieces;
   };
 
-  let lineNo = 0;
+  let yTop = o.y; // top of the next line, in box coordinates
   let counter = 0;
   attrs.forEach((a, p) => {
     const pItems = items.filter((it) => it.para === p && it.ch !== "\n");
@@ -364,11 +366,13 @@ async function drawRichText(doc, page, o, { toX, toY }, fonts, embedded, fontDat
     }
     if (a.list === "number") counter++; else counter = 0;
     lines.forEach((line, li) => {
-      const y = toY(o.y + off0 + lineNo * L + p * paraSpace);
-      lineNo++;
+      const ls = Math.max(size, ...line.map((it) => it.sz));
+      const y = toY(yTop + baselineOffset(ls, lf * ls, asc, desc));
+      yTop += lf * ls;
+      if (li === lines.length - 1) yTop += paraSpace;
       if (li === 0 && a.list) {
         const marker = a.list === "bullet" ? "•" : `${counter}.`;
-        const mitems = Array.from(marker).map((ch) => ({ ch, b: base.b, i: base.i, c: pItems[0]?.c ?? base.c, u: false }));
+        const mitems = Array.from(marker).map((ch) => ({ ch, b: base.b, i: base.i, c: pItems[0]?.c ?? base.c, u: false, sz: size }));
         for (const mi of mitems) { const r = pick(mi); mi.fi = r.fi; mi.ch2 = r.ch; }
         drawPieces(toPieces(mitems, false), o.x + ind, y, 0);
       }

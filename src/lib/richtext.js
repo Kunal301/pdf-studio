@@ -28,7 +28,7 @@ export function charStyles(o) {
   for (const r of o.fmt || []) {
     for (let k = Math.max(0, r.s); k < Math.min(n, r.e); k++) {
       const st = { ...(arr[k] || {}) };
-      for (const key of ["b", "i", "u", "c", "l"]) if (r[key] !== undefined) st[key] = r[key];
+      for (const key of ["b", "i", "u", "c", "l", "z"]) if (r[key] !== undefined) st[key] = r[key];
       arr[k] = st;
     }
   }
@@ -38,7 +38,7 @@ export function charStyles(o) {
 const sameStyle = (a, b) => {
   if (!a && !b) return true;
   if (!a || !b) return false;
-  return a.b === b.b && a.i === b.i && a.u === b.u && a.c === b.c && a.l === b.l;
+  return a.b === b.b && a.i === b.i && a.u === b.u && a.c === b.c && a.l === b.l && a.z === b.z;
 };
 
 export function compressStyles(arr, o) {
@@ -51,6 +51,7 @@ export function compressStyles(arr, o) {
     if (st.u) c.u = true;
     if (st.c !== undefined && st.c.toLowerCase() !== base.c.toLowerCase()) c.c = st.c;
     if (st.l) c.l = st.l;
+    if (st.z && Math.abs(st.z - (o.size || 0)) > 0.01) c.z = st.z;
     return Object.keys(c).length ? c : null;
   });
   const out = [];
@@ -80,7 +81,7 @@ export function applyFmt(o, s, e, patch) {
 export function styleAt(o, k) {
   const base = baseStyle(o);
   const st = charStyles(o)[Math.max(0, Math.min((o.text || "").length - 1, k))] || {};
-  return { b: st.b ?? base.b, i: st.i ?? base.i, u: st.u ?? false, c: st.c ?? base.c, l: st.l || null };
+  return { b: st.b ?? base.b, i: st.i ?? base.i, u: st.u ?? false, c: st.c ?? base.c, l: st.l || null, z: st.z ?? o.size };
 }
 
 /** True when every non-newline char in [s,e) has the given flag. */
@@ -140,7 +141,7 @@ export function renderRich(content, o, zoom, styleSpan) {
       if (st) {
         const sp = document.createElement("span");
         sp.textContent = chunk;
-        for (const key of ["b", "i", "u", "c", "l"]) if (st[key] !== undefined) sp.dataset[key] = String(st[key] === true ? 1 : st[key] === false ? 0 : st[key]);
+        for (const key of ["b", "i", "u", "c", "l", "z"]) if (st[key] !== undefined) sp.dataset[key] = String(st[key] === true ? 1 : st[key] === false ? 0 : st[key]);
         styleSpan(sp, st);
         div.append(sp);
       } else div.append(document.createTextNode(chunk));
@@ -173,6 +174,7 @@ function styleOfNode(node, content) {
     if (st.u === undefined && d.u !== undefined) st.u = d.u === "1";
     if (st.c === undefined && d.c !== undefined) st.c = d.c;
     if (st.l === undefined && d.l !== undefined) st.l = d.l;
+    if (st.z === undefined && d.z !== undefined) st.z = parseFloat(d.z);
   }
   return Object.keys(st).length ? st : null;
 }
@@ -220,7 +222,7 @@ export function parseRich(content, o) {
     if (di < divs.length - 1) { text += "\n"; styles.push(null); }
   });
   const base = baseStyle(o);
-  const tmp = { text, bold: base.b, italic: base.i, color: base.c };
+  const tmp = { text, bold: base.b, italic: base.i, color: base.c, size: o.size };
   return { text, paras, fmt: compressStyles(styles, tmp) };
 }
 

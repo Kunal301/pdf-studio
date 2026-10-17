@@ -215,8 +215,8 @@ export class PageEditor {
     Object.assign(o, patch);
     if (isText) {
       // a whole-box change overrides any per-selection override of the same property
-      const strip = [["bold", "b"], ["italic", "i"], ["color", "c"]].filter(([k]) => k in patch).map(([, f]) => f);
-      if (strip.length) o.fmt = (o.fmt || []).map((r) => { const c = { ...r }; strip.forEach((f) => delete c[f]); return c; }).filter((r) => ["b", "i", "u", "c"].some((f) => r[f] !== undefined));
+      const strip = [["bold", "b"], ["italic", "i"], ["color", "c"], ["size", "z"]].filter(([k]) => k in patch).map(([, f]) => f);
+      if (strip.length) o.fmt = (o.fmt || []).map((r) => { const c = { ...r }; strip.forEach((f) => delete c[f]); return c; }).filter((r) => ["b", "i", "u", "c", "l", "z"].some((f) => r[f] !== undefined));
       if ("font" in patch && o.useOrig) o.useOrig = false; // another family: the PDF's own faces no longer apply
     }
     if (before != null) {
@@ -352,7 +352,7 @@ export class PageEditor {
       Object.assign(content.style, {
         fontFamily: cssStack(o.font, !!o.bold, !!o.italic, o.text, this.origFor(o, !!o.bold, !!o.italic)),
         fontSize: `${o.size * z}px`,
-        lineHeight: `${L * z}px`,
+        lineHeight: String(L / o.size), // unitless: each line grows with its largest text, like Word
         // bold/italic come from the chosen face files, so never ask the browser to synthesize them
         fontWeight: "400",
         fontStyle: "normal",
@@ -623,6 +623,7 @@ export class PageEditor {
     const i = st.i ?? !!o.italic;
     sp.style.fontFamily = cssStack(o.font, b, i, o.text, this.origFor(o, b, i));
     if (st.c) sp.style.color = st.c;
+    if (st.z) sp.style.fontSize = `${st.z * this.zoom}px`;
     if (st.u) sp.style.textDecoration = "underline";
     if (st.l) {
       sp.title = st.l.startsWith("#page=") ? `Page ${st.l.slice(6)} (Ctrl/⌘+click to go)` : `${st.l} (Ctrl/⌘+click to open)`;
@@ -772,6 +773,8 @@ export class PageEditor {
       else if (mod && k === "a") { /* native select-all inside the box */ }
       e.stopPropagation();
     }, opt);
+    // remember the selection at the instant focus leaves the box (e.g. to a size field), before events catch up
+    content.addEventListener("blur", () => { const live = selectionOffsets(content); if (live) ed.lastSel = live; }, opt);
     document.addEventListener("selectionchange", () => {
       const live = this.liveSelection(ed);
       if (live) { ed.lastSel = live; this.emit("format"); }
@@ -871,7 +874,7 @@ export class PageEditor {
     }
     const idx = parasInRange(o.text, s, e)[0] ?? 0;
     const lk = linkRange(o, sel ? s : 0);
-    return { o, hasSelection: !!sel && e > s, b, i, u, c, para: paraAttrs(o, idx), editing: !!t.ed, link: !!lk && (!sel || (s >= lk.s && s <= lk.e)) };
+    return { o, size: styleAt(o, sel ? s : 0).z, hasSelection: !!sel && e > s, b, i, u, c, para: paraAttrs(o, idx), editing: !!t.ed, link: !!lk && (!sel || (s >= lk.s && s <= lk.e)) };
   }
 
   toggleFormat(key) {
@@ -889,6 +892,19 @@ export class PageEditor {
     }
     // no selection: format the whole box
     this.updateObject(o.id, key === "b" ? { bold: !o.bold } : { italic: !o.italic }, { refocus: true });
+  }
+
+  /** Font size: just the selected text when part of the box is selected, otherwise the whole box. */
+  setFontSize(size, { refocus = true, commit = true } = {}) {
+    const t = this.fmtTarget();
+    if (!t) { this.style.size = size; return; }
+    const { o, ed, sel } = t;
+    const len = (o.text || "").length;
+    if (sel && sel.e > sel.s && !(sel.s <= 0 && sel.e >= len)) {
+      applyFmt(o, sel.s, sel.e, { z: size });
+      return this.afterFormat(o, ed, { refocus, commit });
+    }
+    this.updateObject(o.id, { size }, { refocus, commit });
   }
 
   setColor(color, { refocus = true, commit = true } = {}) {
