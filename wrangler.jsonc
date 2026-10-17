@@ -1,0 +1,6 @@
+{
+  // Cloudflare: serve the built static site (run `npm run build` first). Deploy with `npx wrangler deploy`.
+  "name": "pdf-studio",
+  "compatibility_date": "2025-10-01",
+  "assets": { "directory": "./dist" }
+}
