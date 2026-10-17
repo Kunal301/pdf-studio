@@ -1,5 +1,6 @@
-import * as pdfjs from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+// The legacy build bundles the polyfills older Safari/iOS needs (e.g. async iteration of ReadableStream).
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
+import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { readBytes } from "./util.js";
 import { promptText } from "./ui.js";
 import { decryptPdf } from "./qpdf.js";
